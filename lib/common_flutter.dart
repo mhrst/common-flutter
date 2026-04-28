@@ -6,6 +6,7 @@ export 'src/on_disposable.dart';
 export 'src/overflow_menu.dart';
 export 'src/placeholder_image_provider.dart';
 export 'src/image_cache.dart';
+export 'src/localizations.dart';
 export 'src/platform.dart';
 export 'src/preferred_orientation_builder.dart';
 export 'src/or_divider.dart';
