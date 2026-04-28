@@ -31,7 +31,7 @@ class SignInWithButton extends StatefulWidget {
     double? elevation,
     BorderRadius? borderRadius,
   }) => SignInWithButton(
-    assetName: 'packages/common/assets/images/appleid_button_white.png',
+    assetName: 'packages/common_flutter/assets/images/appleid_button_white.png',
     text: text ?? 'Sign in with Apple',
     color: color ?? Colors.white,
     onTap: onTap,
@@ -46,7 +46,8 @@ class SignInWithButton extends StatefulWidget {
     double? elevation,
     BorderRadius? borderRadius,
   }) => SignInWithButton(
-    assetName: 'packages/common/assets/images/btn_google_light_normal_ios.png',
+    assetName:
+        'packages/common_flutter/assets/images/btn_google_light_normal_ios.png',
     text: text ?? 'Sign in with Google',
     color: color ?? const Color.fromARGB(255, 79, 133, 233),
     onTap: onTap,

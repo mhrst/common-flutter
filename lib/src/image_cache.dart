@@ -1,10 +1,37 @@
-import 'dart:typed_data';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+
+class ImageFetchFailure implements Exception {
+  final String id;
+  final String url;
+  final int? statusCode;
+
+  const ImageFetchFailure(this.id, this.url, {this.statusCode});
+
+  @override
+  String toString() {
+    final status = statusCode == null ? '' : ' (HTTP $statusCode)';
+    return 'Image fetch failed for $id$status';
+  }
+}
+
+class _FailedImageFetch {
+  final String url;
+  final DateTime failedAt;
+  final int? statusCode;
+
+  const _FailedImageFetch({
+    required this.url,
+    required this.failedAt,
+    this.statusCode,
+  });
+}
 
 /// A simple disk-backed image cache utility that can be reused across apps.
 ///
@@ -12,7 +39,10 @@ import 'package:path_provider/path_provider.dart';
 /// deterministic file name derived from the provided `id`.
 abstract class ImageCacheService {
   static const String _cacheDirName = 'image_cache';
+  static const Duration _failedFetchCooldown = Duration(minutes: 2);
   static Directory? _cacheDir;
+  static final Map<String, _FailedImageFetch> _failedFetchesById = {};
+  static final Map<String, Future<File?>> _pendingDownloadsById = {};
 
   /// Returns an [ImageProvider] for the given image.
   ///
@@ -27,12 +57,33 @@ abstract class ImageCacheService {
   }) async {
     try {
       final cachedProvider = await getCachedImageProvider(id);
-      if (cachedProvider != null) return cachedProvider;
+      if (cachedProvider != null) {
+        _clearFetchFailure(id);
+        return cachedProvider;
+      }
+
+      final recentFailure = _recentFetchFailure(id, url);
+      if (recentFailure != null) {
+        if (fallback != null) {
+          return fallback;
+        }
+        throw ImageFetchFailure(id, url, statusCode: recentFailure.statusCode);
+      }
 
       final cachedFile = await cacheImage(id, url);
       if (cachedFile != null) return FileImage(cachedFile);
 
+      final failedFetch = _recentFetchFailure(id, url);
+      if (failedFetch != null) {
+        if (fallback != null) {
+          return fallback;
+        }
+        throw ImageFetchFailure(id, url, statusCode: failedFetch.statusCode);
+      }
+
       return NetworkImage(url);
+    } on ImageFetchFailure {
+      rethrow;
     } catch (_) {
       return fallback ?? NetworkImage(url);
     }
@@ -45,16 +96,56 @@ abstract class ImageCacheService {
       await _initialize();
 
       final existing = await getCachedImage(id);
-      if (existing != null) return existing;
+      if (existing != null) {
+        _clearFetchFailure(id);
+        return existing;
+      }
 
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        final file = File(_getCacheFilePath(id));
-        await file.writeAsBytes(response.bodyBytes);
-        return file;
+      if (_recentFetchFailure(id, url) != null) {
+        return null;
+      }
+
+      final pendingDownload = _pendingDownloadsById[id];
+      if (pendingDownload != null) {
+        return await pendingDownload;
+      }
+
+      late final Future<File?> downloadFuture;
+      downloadFuture = _downloadAndCacheImage(id, url);
+      _pendingDownloadsById[id] = downloadFuture;
+      try {
+        return await downloadFuture;
+      } finally {
+        if (identical(_pendingDownloadsById[id], downloadFuture)) {
+          _pendingDownloadsById.remove(id);
+        }
       }
     } catch (_) {}
     return null;
+  }
+
+  static Future<File?> _downloadAndCacheImage(String id, String url) async {
+    http.Response response;
+    try {
+      response = await http.get(Uri.parse(url));
+    } catch (_) {
+      recordFetchFailure(id, url);
+      return null;
+    }
+
+    if (response.statusCode != 200) {
+      recordFetchFailure(id, url, statusCode: response.statusCode);
+      return null;
+    }
+
+    try {
+      final file = File(_getCacheFilePath(id));
+      await file.writeAsBytes(response.bodyBytes);
+      _clearFetchFailure(id);
+      return file;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Returns the cached file for [id] if it exists.
@@ -73,6 +164,26 @@ abstract class ImageCacheService {
     final file = await getCachedImage(id);
     if (file != null) return FileImage(file);
     return null;
+  }
+
+  static void recordFetchFailure(String id, String url, {int? statusCode}) {
+    _failedFetchesById[id] = _FailedImageFetch(
+      url: url,
+      failedAt: DateTime.now(),
+      statusCode: statusCode,
+    );
+  }
+
+  @visibleForTesting
+  static bool hasRecentFetchFailure(String id, String url) {
+    return _recentFetchFailure(id, url) != null;
+  }
+
+  @visibleForTesting
+  static void resetForTesting() {
+    _cacheDir = null;
+    _failedFetchesById.clear();
+    _pendingDownloadsById.clear();
   }
 
   /// Clears the entire image cache directory.
@@ -152,5 +263,26 @@ abstract class ImageCacheService {
   static String _getCacheFilePath(String id) {
     final hash = sha256.convert(Uint8List.fromList(id.codeUnits)).toString();
     return '${_cacheDir!.path}/$hash';
+  }
+
+  static void _clearFetchFailure(String id) {
+    _failedFetchesById.remove(id);
+  }
+
+  static _FailedImageFetch? _recentFetchFailure(String id, String url) {
+    final failure = _failedFetchesById[id];
+    if (failure == null) return null;
+
+    if (failure.url != url) {
+      _failedFetchesById.remove(id);
+      return null;
+    }
+
+    if (DateTime.now().difference(failure.failedAt) > _failedFetchCooldown) {
+      _failedFetchesById.remove(id);
+      return null;
+    }
+
+    return failure;
   }
 }
