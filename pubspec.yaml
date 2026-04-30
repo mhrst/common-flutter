@@ -6,8 +6,6 @@ homepage: https://github.com/mhrst/common-flutter
 environment:
   sdk: ^3.11.0
 
-resolution: workspace
-
 dependencies:
   flutter:
     sdk: flutter
