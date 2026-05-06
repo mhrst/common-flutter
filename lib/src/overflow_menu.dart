@@ -22,16 +22,19 @@ class OverflowMenuListTile extends OverflowMenuItem {
   }) : super(child: title);
 }
 
+typedef OverflowMenuItemsBuilder =
+    List<OverflowMenuItem> Function(BuildContext context);
+
 class OverflowMenu extends StatelessWidget {
   final VoidCallback? onOpen;
   final VoidCallback? onClose;
   final MenuController controller;
-  final List<OverflowMenuItem> items;
+  final OverflowMenuItemsBuilder itemsBuilder;
   final MenuAnchorChildBuilder? builder;
 
   const OverflowMenu({
     super.key,
-    required this.items,
+    required this.itemsBuilder,
     required this.controller,
     this.builder,
     this.onOpen,
@@ -49,7 +52,38 @@ class OverflowMenu extends StatelessWidget {
       controller: controller,
       onClose: onClose,
       menuChildren: [
-        for (final item in items)
+        _OverflowMenuItems(controller: controller, itemsBuilder: itemsBuilder),
+      ],
+      builder:
+          builder ??
+          (context, controller, _) => IconButton(
+            icon: Icon(Icons.more_vert),
+            onPressed: controller.isOpen
+                ? controller.close
+                : () {
+                    onOpen?.call();
+                    controller.open();
+                  },
+          ),
+    ),
+  );
+}
+
+class _OverflowMenuItems extends StatelessWidget {
+  final MenuController controller;
+  final OverflowMenuItemsBuilder itemsBuilder;
+
+  const _OverflowMenuItems({
+    required this.controller,
+    required this.itemsBuilder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final item in itemsBuilder(context))
           switch (item) {
             OverflowMenuListTile() => ListTile(
               title: item.title,
@@ -68,17 +102,6 @@ class OverflowMenu extends StatelessWidget {
             _ => item.child,
           },
       ],
-      builder:
-          builder ??
-          (context, controller, _) => IconButton(
-            icon: Icon(Icons.more_vert),
-            onPressed: controller.isOpen
-                ? controller.close
-                : () {
-                    onOpen?.call();
-                    controller.open();
-                  },
-          ),
-    ),
-  );
+    );
+  }
 }
