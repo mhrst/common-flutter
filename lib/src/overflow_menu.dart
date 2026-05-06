@@ -24,6 +24,7 @@ class OverflowMenuListTile extends OverflowMenuItem {
 
 class OverflowMenu extends StatelessWidget {
   final VoidCallback? onOpen;
+  final VoidCallback? onClose;
   final MenuController controller;
   final List<OverflowMenuItem> items;
   final MenuAnchorChildBuilder? builder;
@@ -34,6 +35,7 @@ class OverflowMenu extends StatelessWidget {
     required this.controller,
     this.builder,
     this.onOpen,
+    this.onClose,
   });
 
   @override
@@ -45,6 +47,7 @@ class OverflowMenu extends StatelessWidget {
       consumeOutsideTap: true,
       useRootOverlay: true,
       controller: controller,
+      onClose: onClose,
       menuChildren: [
         for (final item in items)
           switch (item) {
