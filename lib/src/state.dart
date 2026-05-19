@@ -8,9 +8,9 @@ mixin SafeSetState<T extends StatefulWidget> on State<T> {
   @override
   void setState(VoidCallback fn) {
     if (!mounted) {
-      fn();
-    } else {
-      super.setState(fn);
+      return;
     }
+
+    super.setState(fn);
   }
 }
