@@ -198,18 +198,27 @@ void main() {
     expect(anchorScrollView.controller!.position.maxScrollExtent, 0);
   });
 
-  testWidgets('uses compact horizontal spacing for menu rows', (tester) async {
+  testWidgets('matches the compact layout of custom menu rows', (tester) async {
     final controller = MenuController();
 
     await tester.pumpWidget(
       MaterialApp(
+        theme: ThemeData(useMaterial3: false),
         home: Scaffold(
           body: OverflowMenu(
             controller: controller,
             itemsBuilder: (context) => [
+              const OverflowMenuItem(
+                child: ListTile(
+                  key: ValueKey('custom_tile'),
+                  contentPadding: EdgeInsets.only(left: 18),
+                  leading: Icon(Icons.star, key: ValueKey('custom_leading')),
+                  title: Text('Custom row', key: ValueKey('custom_title')),
+                ),
+              ),
               OverflowMenuListTile(
-                leading: const Icon(Icons.star, key: ValueKey('leading')),
-                title: const Text('Compact row', key: ValueKey('title')),
+                leading: const Icon(Icons.star, key: ValueKey('menu_leading')),
+                title: const Text('Menu row', key: ValueKey('menu_title')),
                 onTap: () {},
               ),
             ],
@@ -225,11 +234,57 @@ void main() {
     await tester.tap(find.text('Open menu'));
     await tester.pumpAndSettle();
 
-    final tileRect = tester.getRect(find.byType(ListTile));
-    final leadingRect = tester.getRect(find.byKey(const ValueKey('leading')));
-    final titleRect = tester.getRect(find.byKey(const ValueKey('title')));
-    expect(leadingRect.left - tileRect.left, 8);
-    expect(titleRect.left - tileRect.left, 32);
-    expect(tileRect.right - titleRect.right, 8);
+    final menuTileFinder = find.ancestor(
+      of: find.byKey(const ValueKey('menu_title')),
+      matching: find.byType(ListTile),
+    );
+    final menuTile = tester.widget<ListTile>(menuTileFinder);
+    expect(menuTile.contentPadding, isNull);
+    expect(menuTile.dense, isNull);
+    expect(menuTile.horizontalTitleGap, isNull);
+    expect(menuTile.minLeadingWidth, isNull);
+    expect(menuTile.minVerticalPadding, isNull);
+
+    final menuTileRect = tester.getRect(menuTileFinder);
+    final menuLeadingRect = tester.getRect(
+      find.byKey(const ValueKey('menu_leading')),
+    );
+    final menuTitle = find.byKey(const ValueKey('menu_title'));
+    final menuTitleRect = tester.getRect(menuTitle);
+    expect(menuLeadingRect.left - menuTileRect.left, 18);
+    expect(menuTileRect.right - menuTitleRect.right, 18);
+
+    final customTileRect = tester.getRect(
+      find.byKey(const ValueKey('custom_tile')),
+    );
+    final customLeadingRect = tester.getRect(
+      find.byKey(const ValueKey('custom_leading')),
+    );
+    final customTitle = find.byKey(const ValueKey('custom_title'));
+    final customTitleRect = tester.getRect(customTitle);
+    expect(menuLeadingRect.left, customLeadingRect.left);
+    expect(menuTileRect.height, customTileRect.height);
+    expect(
+      menuTitleRect.left - menuLeadingRect.right,
+      customTitleRect.left - customLeadingRect.right,
+    );
+
+    final menuText = tester.widget<RichText>(
+      find.descendant(of: menuTitle, matching: find.byType(RichText)),
+    );
+    final customText = tester.widget<RichText>(
+      find.descendant(of: customTitle, matching: find.byType(RichText)),
+    );
+    expect(menuText.text.style, customText.text.style);
+
+    final tileTheme = ListTileTheme.of(tester.element(menuTitle));
+    expect(tileTheme.dense, isTrue);
+    expect(
+      tileTheme.contentPadding,
+      const EdgeInsets.symmetric(horizontal: 18),
+    );
+    expect(tileTheme.horizontalTitleGap, 0);
+    expect(tileTheme.minVerticalPadding, 0);
+    expect(tileTheme.minLeadingWidth, isNull);
   });
 }

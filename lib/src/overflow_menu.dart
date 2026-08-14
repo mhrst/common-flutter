@@ -82,10 +82,9 @@ class OverflowMenu extends StatelessWidget {
 
     return MediaQuery(
       data: overlayMediaQuery,
-      child: ListTileTheme(
+      child: ListTileTheme.merge(
         dense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-        minLeadingWidth: 24,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18),
         minVerticalPadding: 0,
         horizontalTitleGap: 0,
         child: MenuAnchor(
