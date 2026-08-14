@@ -29,11 +29,11 @@ typedef OverflowMenuItemsBuilder =
 
 /// Displays overflow actions without placing them beneath system UI.
 ///
-/// [MenuAnchor] already scrolls a menu whose contents exceed its constraints.
-/// However, its height constraint does not include system insets, and an
-/// ancestor [SafeArea] may remove those insets from the ambient [MediaQuery].
-/// Restoring the view's system metrics and reserving the obscured area gives
-/// the built-in scroll container the usable screen height instead.
+/// [MenuAnchor] normally scrolls contents that exceed its constraints, but its
+/// scrollbar also treats landscape system insets as padding inside the popup.
+/// An ancestor [SafeArea] can additionally remove those insets from the
+/// ambient [MediaQuery]. This widget reserves the obscured area for placement
+/// and owns the menu scroll view so its scrollbar stays against the panel edge.
 class OverflowMenu extends StatelessWidget {
   static const _screenMargin = 8.0;
 
@@ -65,8 +65,8 @@ class OverflowMenu extends StatelessWidget {
       systemGestureInsets: viewMediaQuery.systemGestureInsets,
     );
 
-    // Constrain the menu to the unobscured part of the view. MenuAnchor uses
-    // this height for its own SingleChildScrollView when every item cannot fit.
+    // Use the unobscured part of the view for both anchor placement and the
+    // menu's local scroll constraint.
     final safePadding = viewMediaQuery.padding;
     final viewInsets = viewMediaQuery.viewInsets;
     final reservedPadding = EdgeInsets.fromLTRB(
@@ -75,23 +75,35 @@ class OverflowMenu extends StatelessWidget {
       math.max(safePadding.right, viewInsets.right) + _screenMargin,
       math.max(safePadding.bottom, viewInsets.bottom) + _screenMargin,
     );
+    final maximumMenuHeight = math.max(
+      0.0,
+      viewMediaQuery.size.height - reservedPadding.vertical,
+    );
 
     return MediaQuery(
       data: overlayMediaQuery,
       child: ListTileTheme(
         dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        minLeadingWidth: 24,
         minVerticalPadding: 0,
         horizontalTitleGap: 0,
         child: MenuAnchor(
           consumeOutsideTap: true,
           useRootOverlay: true,
           reservedPadding: reservedPadding,
+          // OverflowMenu owns scrolling so it can remove window padding from
+          // the local scrollbar without changing root-overlay positioning.
+          style: const MenuStyle(
+            padding: WidgetStatePropertyAll(EdgeInsets.zero),
+          ),
           controller: controller,
           onClose: onClose,
           menuChildren: [
             _OverflowMenuItems(
               controller: controller,
               itemsBuilder: itemsBuilder,
+              maximumHeight: maximumMenuHeight,
             ),
           ],
           builder:
@@ -111,43 +123,83 @@ class OverflowMenu extends StatelessWidget {
   }
 }
 
-class _OverflowMenuItems extends StatelessWidget {
+class _OverflowMenuItems extends StatefulWidget {
   final MenuController controller;
   final OverflowMenuItemsBuilder itemsBuilder;
+  final double maximumHeight;
 
   const _OverflowMenuItems({
     required this.controller,
     required this.itemsBuilder,
+    required this.maximumHeight,
   });
 
   @override
+  State<_OverflowMenuItems> createState() => _OverflowMenuItemsState();
+}
+
+class _OverflowMenuItemsState extends State<_OverflowMenuItems> {
+  final _scrollController = ScrollController();
+
+  @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final item in itemsBuilder(context))
-          switch (item) {
-            OverflowMenuListTile() => ListTile(
-              title: item.title,
-              leading: item.leading,
-              trailing: item.trailing,
-              subtitle: item.subtitle,
-              // Put the callback on the row itself so the whole option has
-              // button semantics and the menu closes before the action runs.
-              onTap: item.onTap == null
-                  ? null
-                  : () {
-                      controller.close();
-                      item.onTap?.call();
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: widget.maximumHeight),
+      // Flutter's scrollbar treats the view's landscape safe area as padding
+      // inside this local popup. Remove it only from the menu contents; the
+      // outer MenuAnchor still uses the full metrics for safe positioning.
+      child: MediaQuery.removePadding(
+        context: context,
+        removeLeft: true,
+        removeTop: true,
+        removeRight: true,
+        removeBottom: true,
+        child: Scrollbar(
+          key: const ValueKey('overflow_menu_scrollbar'),
+          controller: _scrollController,
+          thumbVisibility: true,
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (final item in widget.itemsBuilder(context))
+                    switch (item) {
+                      OverflowMenuListTile() => ListTile(
+                        title: item.title,
+                        leading: item.leading,
+                        trailing: item.trailing,
+                        subtitle: item.subtitle,
+                        // Put the callback on the row itself so the whole
+                        // option has button semantics and closes before the
+                        // action runs.
+                        onTap: item.onTap == null
+                            ? null
+                            : () {
+                                widget.controller.close();
+                                item.onTap?.call();
+                              },
+                      ),
+                      _ when item.onTap != null => InkWell(
+                        onTap: item.onTap,
+                        child: item.child,
+                      ),
+                      _ => item.child,
                     },
+                ],
+              ),
             ),
-            _ when item.onTap != null => InkWell(
-              onTap: item.onTap,
-              child: item.child,
-            ),
-            _ => item.child,
-          },
-      ],
+          ),
+        ),
+      ),
     );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 }
